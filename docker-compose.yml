@@ -1,0 +1,71 @@
+networks:
+  gitea:
+    external: false
+
+services:
+  gitea:
+    image: docker.gitea.com/gitea:latest
+    container_name: gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+    restart: always
+    networks:
+      - gitea
+    volumes:
+      - /mnt/external/docker/volumes/gitea:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3333:3000"
+      - "2222:22"
+
+  woodpecker-server:
+    image: woodpeckerci/woodpecker-server:v3
+    container_name: woodpecker-server
+    restart: always
+    ports:
+      - "8888:8000"
+
+    networks:
+      - gitea
+    volumes:
+      - woodpecker-server-data:/var/lib/woodpecker/
+    environment:
+      - WOODPECKER_OPEN=true
+      - WOODPECKER_HOST=http://${IP_ADDRESS}:8888
+      - WOODPECKER_GITEA=true
+      - WOODPECKER_GITEA_URL=http://${IP_ADDRESS}:3333
+      - WOODPECKER_GITEA_CLIENT=${WOODPECKER_GITEA_CLIENT}
+      - WOODPECKER_GITEA_SECRET=${WOODPECKER_GITEA_SECRET}
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_DATABASE_DRIVER=sqlite3
+      - WOODPECKER_DATABASE_DATASOURCE=/var/lib/woodpecker/woodpecker.sqlite
+      - WOODPECKER_LOG_LEVEL=info
+      - WOODPECKER_PLUGINS_PRIVILEGED=woodpeckerci/plugin-docker-buildx        
+    depends_on:
+      - gitea
+
+  woodpecker-agent:
+    image: woodpeckerci/woodpecker-agent:v3
+    container_name: woodpecker-agent
+    restart: always
+    depends_on:
+      - woodpecker-server
+    networks:
+      - gitea
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - woodpecker-agent-config:/etc/woodpecker
+    environment:
+      - WOODPECKER_SERVER=woodpecker-server:9000
+      - WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
+      - WOODPECKER_LOG_LEVEL=debug
+      - WOODPECKER_BACKEND_DOCKER_NETWORK=cicd_gitea
+      - WOODPECKER_BACKEND=docker
+      - WOODPECKER_MAX_WORKFLOWS=1
+      - WOODPECKER_PLUGINS_PRIVILEGED=woodpeckerci/plugin-docker-buildx        
+
+volumes:
+  woodpecker-server-data:
+  woodpecker-agent-config:
